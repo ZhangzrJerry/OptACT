@@ -30,28 +30,22 @@ def main(args):
     ckpt_dir = args["ckpt_dir"]
     policy_class = args["policy_class"]
     onscreen_render = args["onscreen_render"]
-    task_name = args["task_name"]
     batch_size_train = args["batch_size"]
     batch_size_val = args["batch_size"]
     num_epochs = args["num_epochs"]
 
     # get task parameters
-    is_sim = task_name[:4] == "sim_"
-    if is_sim:
-        from constants import SIM_TASK_CONFIGS
+    from constants import SIM_TASK_CONFIGS
 
-        task_config = SIM_TASK_CONFIGS[task_name]
-    else:
-        from aloha_scripts.constants import TASK_CONFIGS
+    task_config = SIM_TASK_CONFIGS
 
-        task_config = TASK_CONFIGS[task_name]
     dataset_dir = task_config["dataset_dir"]
     num_episodes = task_config["num_episodes"]
     episode_len = task_config["episode_len"]
     camera_names = task_config["camera_names"]
 
     # fixed parameters
-    state_dim = 14
+    state_dim = 7
     lr_backbone = 1e-5
     backbone = "resnet18"
     if policy_class == "ACT":
@@ -91,11 +85,10 @@ def main(args):
         "policy_class": policy_class,
         "onscreen_render": onscreen_render,
         "policy_config": policy_config,
-        "task_name": task_name,
         "seed": args["seed"],
         "temporal_agg": args["temporal_agg"],
         "camera_names": camera_names,
-        "real_robot": not is_sim,
+        "real_robot": False,
     }
 
     if is_eval:
@@ -170,7 +163,6 @@ def eval_bc(config, ckpt_name, save_episode=True):
     policy_config = config["policy_config"]
     camera_names = config["camera_names"]
     max_timesteps = config["episode_len"]
-    task_name = config["task_name"]
     temporal_agg = config["temporal_agg"]
     onscreen_cam = "angle"
 
@@ -199,7 +191,7 @@ def eval_bc(config, ckpt_name, save_episode=True):
     else:
         from sim_env import make_sim_env
 
-        env = make_sim_env(task_name)
+        env = make_sim_env()
         env_max_reward = env.task.max_reward
 
     query_frequency = policy_config["num_queries"]
@@ -214,11 +206,7 @@ def eval_bc(config, ckpt_name, save_episode=True):
     highest_rewards = []
     for rollout_id in range(num_rollouts):
         rollout_id += 0
-        ### set task
-        if "sim_transfer_cube" in task_name:
-            BOX_POSE[0] = sample_box_pose()  # used in sim reset
-        elif "sim_insertion" in task_name:
-            BOX_POSE[0] = np.concatenate(sample_insertion_pose())  # used in sim reset
+        BOX_POSE[0] = sample_box_pose()
 
         ts = env.reset()
 
@@ -479,9 +467,6 @@ if __name__ == "__main__":
         type=str,
         help="policy_class, capitalize",
         required=True,
-    )
-    parser.add_argument(
-        "--task_name", action="store", type=str, help="task_name", required=True
     )
     parser.add_argument(
         "--batch_size", action="store", type=int, help="batch_size", required=True

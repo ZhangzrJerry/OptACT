@@ -5,10 +5,10 @@ import argparse
 import matplotlib.pyplot as plt
 import h5py
 
-from constants import PUPPET_GRIPPER_POSITION_NORMALIZE_FN, SIM_TASK_CONFIGS
+from constants import A1_GRIPPER_POSITION_NORMALIZE_FN, SIM_TASK_CONFIGS
 from ee_sim_env import make_ee_sim_env
 from sim_env import make_sim_env, BOX_POSE
-from scripted_policy import PickAndTransferPolicy, InsertionPolicy
+from scripted_policy import PickAndPlacePolicy
 
 import IPython
 
@@ -24,7 +24,6 @@ def main(args):
     Save this episode of data, and continue to next episode of data collection.
     """
 
-    task_name = args["task_name"]
     dataset_dir = args["dataset_dir"]
     num_episodes = args["num_episodes"]
     onscreen_render = args["onscreen_render"]
@@ -34,21 +33,16 @@ def main(args):
     if not os.path.isdir(dataset_dir):
         os.makedirs(dataset_dir, exist_ok=True)
 
-    episode_len = SIM_TASK_CONFIGS[task_name]["episode_len"]
-    camera_names = SIM_TASK_CONFIGS[task_name]["camera_names"]
-    if task_name == "sim_transfer_cube_scripted":
-        policy_cls = PickAndTransferPolicy
-    elif task_name == "sim_insertion_scripted":
-        policy_cls = InsertionPolicy
-    else:
-        raise NotImplementedError
+    episode_len = SIM_TASK_CONFIGS["episode_len"]
+    camera_names = SIM_TASK_CONFIGS["camera_names"]
+    policy_cls = PickAndPlacePolicy
 
     success = []
     for episode_idx in range(num_episodes):
         print(f"{episode_idx=}")
         print("Rollout out EE space scripted policy")
         # setup the environment
-        env = make_ee_sim_env(task_name)
+        env = make_ee_sim_env()
         ts = env.reset()
         episode = [ts]
         policy = policy_cls(inject_noise)
@@ -77,10 +71,7 @@ def main(args):
         # replace gripper pose with gripper control
         gripper_ctrl_traj = [ts.observation["gripper_ctrl"] for ts in episode]
         for joint, ctrl in zip(joint_traj, gripper_ctrl_traj):
-            left_ctrl = PUPPET_GRIPPER_POSITION_NORMALIZE_FN(ctrl[0])
-            right_ctrl = PUPPET_GRIPPER_POSITION_NORMALIZE_FN(ctrl[2])
-            joint[6] = left_ctrl
-            joint[6 + 7] = right_ctrl
+            joint[6] = A1_GRIPPER_POSITION_NORMALIZE_FN(ctrl[0])
 
         subtask_info = episode[0].observation["env_state"].copy()  # box pose at step 0
 
@@ -91,7 +82,7 @@ def main(args):
 
         # setup the environment
         print("Replaying joint commands")
-        env = make_sim_env(task_name)
+        env = make_sim_env()
         BOX_POSE[0] = (
             subtask_info  # make sure the sim_env has the same object configurations as ee_sim_env
         )
@@ -127,12 +118,11 @@ def main(args):
         observations
         - images
             - each_cam_name     (480, 640, 3) 'uint8'
-        - qpos                  (14,)         'float64'
-        - qvel                  (14,)         'float64'
+        - qpos                  (7,)         'float64'
+        - qvel                  (7,)         'float64'
 
-        action                  (14,)         'float64'
+        action                  (7,)         'float64'
         """
-
         data_dict = {
             "/observations/qpos": [],
             "/observations/qvel": [],
@@ -176,9 +166,9 @@ def main(args):
                 )
             # compression='gzip',compression_opts=2,)
             # compression=32001, compression_opts=(0, 0, 0, 0, 9, 1, 1), shuffle=False)
-            qpos = obs.create_dataset("qpos", (max_timesteps, 14))
-            qvel = obs.create_dataset("qvel", (max_timesteps, 14))
-            action = root.create_dataset("action", (max_timesteps, 14))
+            qpos = obs.create_dataset("qpos", (max_timesteps, 7))
+            qvel = obs.create_dataset("qvel", (max_timesteps, 7))
+            action = root.create_dataset("action", (max_timesteps, 7))
 
             for name, array in data_dict.items():
                 root[name][...] = array
@@ -190,9 +180,6 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--task_name", action="store", type=str, help="task_name", required=True
-    )
     parser.add_argument(
         "--dataset_dir",
         action="store",
